@@ -49,37 +49,6 @@ struct HEAP {
 	UINT64 size = 0;
 } actual_work;
 
-// Get timestamp count (CPU Cycle)
-static inline UINT64 get_tsc() {
-	#if defined(__i386) || defined(__x86_64__)
-		unsigned int lo, hi;
-		__asm__ __volatile__ (
-			"cpuid \n"
-			"rdtsc"
-			: "=a"(lo), "=d"(hi) /* outputs */
-			: "a"(0)             /* inputs */
-			: "%ebx", "%ecx");   /* clobbers*/
-	  return ((UINT64)lo) | (((UINT64)hi) << 32);
-	#elif defined(__ia64)
-		UINT64 r;
-		__asm__ __volatile__ ("mov %0=ar.itc" : "=r" (r) :: "memory");
-		return r;
-	#elif defined(__powerpc__)
-		UINT64 hi, lo, tmp;
-		__asm__ volatile(
-			"0:\n"
-			"mftbu   %0 \n"
-			"mftb    %1 \n"
-			"mftbu   %2 \n"
-			"cmpw    %2,%0 \n"
-			"bne     0b \n"
-			: "=r"(hi),"=r"(lo),"=r"(tmp) );
-		return ((UINT64)lo) | (((UINT64)hi) << 32);
-	#else
-		#error "architecture not supported"
-	#endif
-}
-
 VOID premalloc(ADDRINT retip, ADDRINT size) {
 	actual_work.size = (size >> page_size);
 }
