@@ -21,6 +21,9 @@ static int page_size;
 // Discrete time counter
 static int time_counter = 0;
 
+// Discrete normalized time counter
+static int norm_counter = 0;
+
 // File to output memory accesses
 ofstream tmp_trace_file;
 
@@ -35,6 +38,9 @@ map<UINT64, string> accessmap [THREADS];
 
 // Number of mallocs <addr, size>
 map<UINT64, UINT64> mallocs [THREADS];
+
+// Map of normalized addresses
+map<UINT64, UINT64> norm_addrs [THREADS];
 
 // Struct for stack info
 struct STACK {
@@ -88,12 +94,18 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 
 		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
 		tmp_trace_file << ++time_counter << " " << page_limit_normalized << "\n";
+		if (norm_addrs[0].find(addr_normalized) == norm_addrs[0].end())
+			norm_addrs[0][addr_normalized] = ++norm_counter;
+		if (norm_addrs[0].find(page_limit_normalized) == norm_addrs[0].end())
+			norm_addrs[0][page_limit_normalized] = ++norm_counter;
 
 	} else {
 		if (pagemap[tid][addr_normalized]++ == 0)
 			insert_call_location(tid, addr_normalized, ctxt);
 
 		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
+		if (norm_addrs[0].find(addr_normalized) == norm_addrs[0].end())
+			norm_addrs[0][addr_normalized] = ++norm_counter;
 	}
 }
 
@@ -139,10 +151,10 @@ VOID Fini(INT32 code, VOID* val) {
 	ofstream overview_file;
 	overview_file.open((img_name + ".overall.info.csv").c_str());
 
-	UINT64 smallest_addr = ULLONG_MAX;
+	UINT64 heap_smallest_addr = ULLONG_MAX;
 	for (auto it : mallocs[0]) {
-		if (it.first <= smallest_addr)
-			smallest_addr = it.first;
+		if (it.first <= heap_smallest_addr)
+			heap_smallest_addr = it.first;
 
 		cout << "Alloc (Heap): " << it.first << " " << it.second << " " << it.first+it.second << endl;
 	}
@@ -154,7 +166,7 @@ VOID Fini(INT32 code, VOID* val) {
 		overview_file << pagemap[0][it.first];
 		if (stack.addr >= it.first && it.first >= stack.max)
 			overview_file << ",Stack";
-		else if (smallest_addr >= it.first)
+		else if (heap_smallest_addr > it.first)
 			overview_file << ",Data";
 		else {
 			for (auto it2 : mallocs[0])
@@ -170,6 +182,12 @@ VOID Fini(INT32 code, VOID* val) {
 	ofstream static_trace_file;
 	ofstream heap_trace_file;
 	ofstream stack_trace_file;
+	UINT64 norm_static_time_init = 0;
+	UINT64 norm_heap_time_init = 0;
+	UINT64 norm_stack_time_init = 0;
+	UINT64 norm_static_addr_init = 0;
+	UINT64 norm_heap_addr_init = 0;
+	UINT64 norm_stack_addr_init = 0;
 	string str;
 
 	static_trace_file.open((img_name + ".static.trace.csv").c_str());
@@ -189,15 +207,27 @@ VOID Fini(INT32 code, VOID* val) {
 		addr = strtoul(str.c_str(), NULL, 0);
 
 		if (stack.addr >= addr && addr >= stack.max) {
-			stack_trace_file << time << " " << addr;
+			if (norm_stack_time_init == 0)
+				norm_stack_time_init = time;
+			if (norm_stack_addr_init == 0)
+				norm_stack_addr_init = norm_addrs[0][addr];
+			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_addrs[0][addr]-(norm_stack_addr_init-1);
 			stack_trace_file << "\n";
-		} else if (smallest_addr >= addr) {
-			static_trace_file << time << " " << addr;
+		} else if (heap_smallest_addr > addr) {
+			if (norm_static_time_init == 0)
+				norm_static_time_init = time;
+			if (norm_static_addr_init == 0)
+				norm_static_addr_init = norm_addrs[0][addr];
+			static_trace_file << time-(norm_static_time_init-1) << " " << norm_addrs[0][addr]-(norm_static_addr_init-1);
 			static_trace_file << "\n";
 		} else {
 			for (auto it2 : mallocs[0])
 				if (it2.first <= addr && addr <= it2.first+it2.second) {
-					heap_trace_file << time << " " << addr;
+					if (norm_heap_time_init == 0)
+						norm_heap_time_init = time;
+					if (norm_heap_addr_init == 0)
+						norm_heap_addr_init = norm_addrs[0][addr];
+					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_addrs[0][addr]-(norm_heap_addr_init-1);
 					heap_trace_file << "\n";
 				}
 		}
