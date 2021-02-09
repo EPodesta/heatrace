@@ -15,15 +15,6 @@
 
 using namespace std;
 
-// Size of pages
-static int page_size;
-
-// Discrete time counter
-static int time_counter = 0;
-
-// Discrete normalized time counter
-static int norm_counter = 0;
-
 // File to output memory accesses
 ofstream tmp_trace_file;
 
@@ -36,11 +27,19 @@ map<UINT64, UINT64> pagemap [THREADS];
 // Map of memory op locations <addr, location>
 map<UINT64, string> accessmap [THREADS];
 
-// Number of mallocs <addr, size>
+// Structure of code mallocs <addr, size>
 map<UINT64, UINT64> mallocs [THREADS];
 
 // Map of normalized addresses
-map<UINT64, UINT64> norm_addrs [THREADS];
+map<UINT64, UINT64> norm_static_addr [THREADS];
+map<UINT64, UINT64> norm_heap_addr [THREADS];
+map<UINT64, UINT64> norm_stack_addr [THREADS];
+
+// Size of pages
+static int page_size;
+
+// Discrete time counter
+static int time_counter = 0;
 
 // Struct for stack info
 struct STACK {
@@ -49,22 +48,44 @@ struct STACK {
 	UINT64 addr;
 } stack;
 
-// Struct for heap info
+/*
+ * Struct for heap info
+ * Noteworthy, this structure is related to the most recent malloc.
+ */
 struct HEAP {
 	UINT64 addr;
-	UINT64 size = 0;
+	UINT64 size;
 } actual_work;
 
+/*
+ * This method will be called before each malloc in the binary.
+ * Also, it will save the malloc size value in pages.
+ * @param retip is the returned instruction pointer.
+ * @param size is the malloc size.
+ */
 VOID premalloc(ADDRINT retip, ADDRINT size) {
 	actual_work.size = (size >> page_size);
 }
 
+/*
+ * This method will be called after each malloc in the binary
+ * Also, it will save the address of the pointer in the beginning of the
+ * allocated space.
+ * Finally, information about the malloc will be added to an array.
+ * @param ret is the first address of the allocated memory region.
+ */
 VOID postmalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	mallocs[0][actual_work.addr] = actual_work.size;
 }
 
-VOID insert_call_location(int tid, UINT64 addr, const CONTEXT *ctxt) {
+/*
+ * This method will identify the memory op call location.
+ * @param tid is the thread identifier.
+ * @param addr is the memory op address.
+ * @param ctxt is the instruction context information.
+ */
+VOID call_location(int tid, UINT64 addr, const CONTEXT *ctxt) {
 	string fname;
 	int col, line;
 	PIN_LockClient();
@@ -75,7 +96,18 @@ VOID insert_call_location(int tid, UINT64 addr, const CONTEXT *ctxt) {
 	else
 		accessmap[tid][addr] = "," + fname + ":" + decstr(line);
 }
-
+/*
+ * This method will normalize each memory op address, link with a location in
+ * the binary and structure an output file in the following format:
+ * "discrete_time addr_normalized".
+ * Also, to ease region time and address normalization, norm_addrs structure is
+ * used.
+ * @param ptr is the instruction pointer.
+ * @param ctxt is the instruction initial register state.
+ * @param addr is the memory op address.
+ * @param size is the memory op size.
+ * @param tid is the thread identifier.
+ */
 VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRINT size, THREADID tid) {
 
 	UINT64 addr_normalized = addr >> page_size;
@@ -87,28 +119,29 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 		UINT64 lower_threshold = size - upper_threshold;
 
 		if (pagemap[tid][addr_normalized]++ == 0)
-			insert_call_location(tid, addr_normalized, ctxt);
+			call_location(tid, addr_normalized, ctxt);
 
 		if (pagemap[tid][page_limit_normalized]++ == 0)
-			insert_call_location(tid, page_limit_normalized, ctxt);
+			call_location(tid, page_limit_normalized, ctxt);
 
 		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
 		tmp_trace_file << ++time_counter << " " << page_limit_normalized << "\n";
-		if (norm_addrs[0].find(addr_normalized) == norm_addrs[0].end())
-			norm_addrs[0][addr_normalized] = ++norm_counter;
-		if (norm_addrs[0].find(page_limit_normalized) == norm_addrs[0].end())
-			norm_addrs[0][page_limit_normalized] = ++norm_counter;
 
 	} else {
 		if (pagemap[tid][addr_normalized]++ == 0)
-			insert_call_location(tid, addr_normalized, ctxt);
+			call_location(tid, addr_normalized, ctxt);
 
 		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
-		if (norm_addrs[0].find(addr_normalized) == norm_addrs[0].end())
-			norm_addrs[0][addr_normalized] = ++norm_counter;
 	}
 }
 
+/*
+ * This method will identify all memory operands from a instruction and iterate
+ * over them. For each operand, it is verified if is read or write and the
+ * proper method is called.
+ * @param ins is the instruction to be instrumented.
+ * @param val is extra arguments to the function.
+ */
 VOID trace_memory(INS ins, VOID *val) {
 	UINT32 memOperands = INS_MemoryOperandCount(ins);
     for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
@@ -122,11 +155,25 @@ VOID trace_memory(INS ins, VOID *val) {
     }
 }
 
+/*
+ * This method will get the stack address and max size. It will be executed at
+ * thread init.
+ * @param tid is the thread identifier.
+ * @param ctxt is the thread initial register state.
+ * @param flags specific flags for the thread.
+ * @param v values for the tool callback.
+ */
 VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) >> page_size;
 	stack.max = stack.addr - stack.size;
 }
 
+/*
+ * This method will find mallocs by name in the code binary and insert calls
+ * before and after each malloc.
+ * @param img is the code binary image.
+ * @param v is the value for the function.
+ */
 VOID find_malloc(IMG img, VOID *v) {
 	if (IMG_IsMainExecutable(img)) {
 		img_name = basename(IMG_Name(img).c_str());
@@ -142,15 +189,28 @@ VOID find_malloc(IMG img, VOID *v) {
 
         RTN_Close(mallocRtn);
     }
-
 }
 
+/*
+ * This method will be run after the code execution and is responsible to use
+ * all the structures to create a file for a summary and to create the final
+ * file for our methodology.
+ * @param code specific termination code for the application.
+ * @param val the tool's callback value.
+ */
 VOID Fini(INT32 code, VOID* val) {
 	tmp_trace_file.close();
 
+	// Overall information file
 	ofstream overview_file;
 	overview_file.open((img_name + ".overall.info.csv").c_str());
 
+	// Discrete normalized time counter
+	UINT64 norm_static_counter = 0;
+	UINT64 norm_heap_counter = 0;
+	UINT64 norm_stack_counter = 0;
+
+	// Find the smallest heap address to locate static data region
 	UINT64 heap_smallest_addr = ULLONG_MAX;
 	for (auto it : mallocs[0]) {
 		if (it.first <= heap_smallest_addr)
@@ -160,19 +220,33 @@ VOID Fini(INT32 code, VOID* val) {
 	}
 	cout << "Stack: " << stack.addr << " " << stack.size << " " << stack.max << endl;
 
+	// Locate memory regions based on stack and heap information. Also, it
+	// normalizes discrete time.
 	for (auto it : pagemap[0]) {
 		overview_file << it.first;
 		overview_file << ",";
 		overview_file << pagemap[0][it.first];
-		if (stack.addr >= it.first && it.first >= stack.max)
+		// if the address is between the stack address and stack max
+		// Noteworthy, the stack grows in a high to low memory address manner.
+		if (stack.addr >= it.first && it.first >= stack.max) {
+			if (norm_addr_stack[0].find(it.first) == norm_addr_stack[0].end())
+				norm_addr_stack[0][it.first] = ++norm_stack_counter;
 			overview_file << ",Stack";
-		else if (heap_smallest_addr > it.first)
+		// if the address is smaller than the heap, then is static data
+		} else if (heap_smallest_addr > it.first) {
+			if (norm_addr_static[0].find(it.first) == norm_addr_static[0].end())
+				norm_addr_static[0][it.first] = ++norm_static_counter;
 			overview_file << ",Data";
-		else {
-			for (auto it2 : mallocs[0])
-				if (it2.first <= it.first && it.first <= it2.first+it2.second)
+		} else {
+			// Iterate over all malloc structures from execution.
+			for (auto malloc : mallocs[0])
+				if (malloc.first <= it.first && it.first <= malloc.first+malloc.second) {
+					if (norm_addr_heap[0].find(it.first) == norm_addr_heap[0].end())
+						norm_addr_heap[0][it.first] = ++norm_heap_counter;
 					overview_file << ",Heap";
+				}
 		}
+		// Write call locations on the output file.
 		overview_file << accessmap[0][it.first];
 		overview_file << "\n";
 	}
@@ -182,12 +256,11 @@ VOID Fini(INT32 code, VOID* val) {
 	ofstream static_trace_file;
 	ofstream heap_trace_file;
 	ofstream stack_trace_file;
+
+	// Time variables to normalize overall time based on memory regions.
 	UINT64 norm_static_time_init = 0;
 	UINT64 norm_heap_time_init = 0;
 	UINT64 norm_stack_time_init = 0;
-	UINT64 norm_static_addr_init = 0;
-	UINT64 norm_heap_addr_init = 0;
-	UINT64 norm_stack_addr_init = 0;
 	string str;
 
 	static_trace_file.open((img_name + ".static.trace.csv").c_str());
@@ -202,32 +275,29 @@ VOID Fini(INT32 code, VOID* val) {
 
 		size_t pos = str.find(delimiter);
 
+		// Get time and address info from file.
 		time = strtoul((str.substr(0, pos)).c_str(), NULL, 0);
 		str.erase(0, pos + delimiter.length());
 		addr = strtoul(str.c_str(), NULL, 0);
 
+		// Locate each region and use the initial time to normalize the time
+		// from each region.
 		if (stack.addr >= addr && addr >= stack.max) {
 			if (norm_stack_time_init == 0)
 				norm_stack_time_init = time;
-			if (norm_stack_addr_init == 0)
-				norm_stack_addr_init = norm_addrs[0][addr];
-			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_addrs[0][addr]-(norm_stack_addr_init-1);
+			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_addr_stack[0][addr];
 			stack_trace_file << "\n";
 		} else if (heap_smallest_addr > addr) {
 			if (norm_static_time_init == 0)
 				norm_static_time_init = time;
-			if (norm_static_addr_init == 0)
-				norm_static_addr_init = norm_addrs[0][addr];
-			static_trace_file << time-(norm_static_time_init-1) << " " << norm_addrs[0][addr]-(norm_static_addr_init-1);
+			static_trace_file << time-(norm_static_time_init-1) << " " << norm_addr_static[0][addr];
 			static_trace_file << "\n";
 		} else {
-			for (auto it2 : mallocs[0])
-				if (it2.first <= addr && addr <= it2.first+it2.second) {
+			for (auto malloc : mallocs[0])
+				if (malloc.first <= addr && addr <= malloc.first+malloc.second) {
 					if (norm_heap_time_init == 0)
 						norm_heap_time_init = time;
-					if (norm_heap_addr_init == 0)
-						norm_heap_addr_init = norm_addrs[0][addr];
-					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_addrs[0][addr]-(norm_heap_addr_init-1);
+					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_addr_heap[0][addr];
 					heap_trace_file << "\n";
 				}
 		}
