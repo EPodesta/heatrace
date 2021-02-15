@@ -115,7 +115,7 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 	UINT64 page_limit_normalized = page_limit >> page_size;
 
 	// Escrever em binario para ser mais rápido. Usar o lzo para compactar e
-	// deixar mais rápido. SE FOR GARGALO.
+	// deixar mais rápido.
 	if (addr + size > page_limit && addr < page_limit) {
 		// UINT64 upper_threshold = (addr+size) - page_limit;
 		// UINT64 lower_threshold = size - upper_threshold;
@@ -133,7 +133,7 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 		if (pagemap[tid][addr_normalized]++ == 0)
 			call_location(tid, addr_normalized, ctxt);
 
-		tmp_trace_file << ++time_counter << " " << addr<< "\n";
+		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
 	}
 }
 
