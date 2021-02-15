@@ -100,7 +100,7 @@ VOID call_location(int tid, UINT64 addr, const CONTEXT *ctxt) {
  * This method will normalize each memory op address, link with a location in
  * the binary and structure an output file in the following format:
  * "discrete_time addr_normalized".
- * Also, to ease region time and address normalization, norm_addrs structure is
+ * Also, to ease region time and address normalization, norm structures are
  * used.
  * @param ptr is the instruction pointer.
  * @param ctxt is the instruction initial register state.
@@ -114,9 +114,11 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 	UINT64 page_limit = (addr_normalized+1)*page_size;
 	UINT64 page_limit_normalized = page_limit >> page_size;
 
+	// Escrever em binario para ser mais rápido. Usar o lzo para compactar e
+	// deixar mais rápido. SE FOR GARGALO.
 	if (addr + size > page_limit && addr < page_limit) {
-		UINT64 upper_threshold = (addr+size) - page_limit;
-		UINT64 lower_threshold = size - upper_threshold;
+		// UINT64 upper_threshold = (addr+size) - page_limit;
+		// UINT64 lower_threshold = size - upper_threshold;
 
 		if (pagemap[tid][addr_normalized]++ == 0)
 			call_location(tid, addr_normalized, ctxt);
@@ -131,7 +133,7 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 		if (pagemap[tid][addr_normalized]++ == 0)
 			call_location(tid, addr_normalized, ctxt);
 
-		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
+		tmp_trace_file << ++time_counter << " " << addr<< "\n";
 	}
 }
 
@@ -163,6 +165,7 @@ VOID trace_memory(INS ins, VOID *val) {
  * @param flags specific flags for the thread.
  * @param v values for the tool callback.
  */
+// Aplicação pode mudar de forma dinamica a minha stack.
 VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) >> page_size;
 	stack.max = stack.addr - stack.size;
@@ -179,6 +182,7 @@ VOID find_malloc(IMG img, VOID *v) {
 		img_name = basename(IMG_Name(img).c_str());
 	}
 
+	// All allocs call the same function.
     RTN mallocRtn = RTN_FindByName(img, "malloc");
     if (RTN_Valid(mallocRtn))
     {
@@ -229,20 +233,20 @@ VOID Fini(INT32 code, VOID* val) {
 		// if the address is between the stack address and stack max
 		// Noteworthy, the stack grows in a high to low memory address manner.
 		if (stack.addr >= it.first && it.first >= stack.max) {
-			if (norm_addr_stack[0].find(it.first) == norm_addr_stack[0].end())
-				norm_addr_stack[0][it.first] = ++norm_stack_counter;
+			if (norm_stack_addr[0].find(it.first) == norm_stack_addr[0].end())
+				norm_stack_addr[0][it.first] = ++norm_stack_counter;
 			overview_file << ",Stack";
 		// if the address is smaller than the heap, then is static data
 		} else if (heap_smallest_addr > it.first) {
-			if (norm_addr_static[0].find(it.first) == norm_addr_static[0].end())
-				norm_addr_static[0][it.first] = ++norm_static_counter;
+			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end())
+				norm_static_addr[0][it.first] = ++norm_static_counter;
 			overview_file << ",Data";
 		} else {
 			// Iterate over all malloc structures from execution.
 			for (auto malloc : mallocs[0])
 				if (malloc.first <= it.first && it.first <= malloc.first+malloc.second) {
-					if (norm_addr_heap[0].find(it.first) == norm_addr_heap[0].end())
-						norm_addr_heap[0][it.first] = ++norm_heap_counter;
+					if (norm_heap_addr[0].find(it.first) == norm_heap_addr[0].end())
+						norm_heap_addr[0][it.first] = ++norm_heap_counter;
 					overview_file << ",Heap";
 				}
 		}
@@ -285,19 +289,19 @@ VOID Fini(INT32 code, VOID* val) {
 		if (stack.addr >= addr && addr >= stack.max) {
 			if (norm_stack_time_init == 0)
 				norm_stack_time_init = time;
-			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_addr_stack[0][addr];
+			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_stack_addr[0][addr];
 			stack_trace_file << "\n";
 		} else if (heap_smallest_addr > addr) {
 			if (norm_static_time_init == 0)
 				norm_static_time_init = time;
-			static_trace_file << time-(norm_static_time_init-1) << " " << norm_addr_static[0][addr];
+			static_trace_file << time-(norm_static_time_init-1) << " " << norm_static_addr[0][addr];
 			static_trace_file << "\n";
 		} else {
 			for (auto malloc : mallocs[0])
 				if (malloc.first <= addr && addr <= malloc.first+malloc.second) {
 					if (norm_heap_time_init == 0)
 						norm_heap_time_init = time;
-					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_addr_heap[0][addr];
+					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_heap_addr[0][addr];
 					heap_trace_file << "\n";
 				}
 		}
@@ -315,6 +319,7 @@ int main (int argc, char **argv) {
 
 	tmp_trace_file.open("tmp_trace_file.tmp");
 	struct rlimit sl;
+	// Stack size from main thread may be different from others.
 	int ret = getrlimit(RLIMIT_STACK, &sl);
 	if (ret == -1)
 		cerr << "Error getting stack size. errno: " << errno << endl;
