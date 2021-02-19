@@ -27,8 +27,8 @@ map<UINT64, UINT64> pagemap [THREADS];
 // Map of memory op locations <addr, location>
 map<UINT64, string> accessmap [THREADS];
 
-// Structure of code mallocs <addr, size>
-map<UINT64, UINT64> mallocs [THREADS];
+// Structure of code allocs <addr, size>
+map<UINT64, UINT64> allocs [THREADS];
 
 // Map of normalized addresses
 map<UINT64, UINT64> norm_static_addr [THREADS];
@@ -50,7 +50,7 @@ struct STACK {
 
 /*
  * Struct for heap info
- * Noteworthy, this structure is related to the most recent malloc.
+ * Noteworthy, this structure is related to the most recent alloc.
  */
 struct HEAP {
 	UINT64 addr;
@@ -63,7 +63,7 @@ struct HEAP {
  * @param retip is the returned instruction pointer.
  * @param size is the malloc size.
  */
-VOID premalloc(ADDRINT retip, ADDRINT size) {
+VOID premalloc(ADDRINT retip, UINT64 size) {
 	actual_work.size = (size >> page_size);
 }
 
@@ -76,9 +76,56 @@ VOID premalloc(ADDRINT retip, ADDRINT size) {
  */
 VOID postmalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
-	mallocs[0][actual_work.addr] = actual_work.size;
+	allocs[0][actual_work.addr] = actual_work.size;
 }
 
+/*
+ * This method will be called before each calloc in the binary.
+ * Also, it will save the calloc size value in pages.
+ * @param retip is the returned instruction pointer.
+ * @param size is the calloc size.
+ */
+VOID precalloc(ADDRINT retip, UINT64 num_elements, UINT64 element_size) {
+	actual_work.size = ((num_elements*element_size) >> page_size);
+}
+
+/*
+ * This method will be called after each calloc in the binary
+ * Also, it will save the address of the pointer in the beginning of the
+ * allocated space.
+ * Finally, information about the calloc will be added to an array.
+ * @param ret is the first address of the allocated memory region.
+ */
+VOID postcalloc(ADDRINT ret) {
+	actual_work.addr = (ret >> page_size);
+	allocs[0][actual_work.addr] = actual_work.size;
+}
+/*
+ * This method will be called before each realloc in the binary.
+ * Also, it will save the realloc size value in pages.
+ * @param retip is the returned instruction pointer.
+ * @param size is the realloc size.
+ */
+VOID prerealloc(ADDRINT retip, ADDRINT heap_ptr, UINT64 size) {
+	ADDRINT heap_ptr_normalized = (heap_ptr >> page_size);
+	actual_work.size = (size >> page_size);
+
+	if (!(allocs[0].find(heap_ptr_normalized) == allocs[0].end()))
+		if (allocs[0][heap_ptr_normalized] >= (size >> page_size))
+			actual_work.size = allocs[0][heap_ptr_normalized];
+}
+
+/*
+ * This method will be called after each realloc in the binary
+ * Also, it will save the address of the pointer in the beginning of the
+ * allocated space.
+ * Finally, information about the realloc will be added to an array.
+ * @param ret is the first address of the allocated memory region.
+ */
+VOID postrealloc(ADDRINT ret) {
+	actual_work.addr = (ret >> page_size);
+	allocs[0][actual_work.addr] = actual_work.size;
+}
 /*
  * This method will identify the memory op call location.
  * @param tid is the thread identifier.
@@ -172,12 +219,12 @@ VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 }
 
 /*
- * This method will find mallocs by name in the code binary and insert calls
- * before and after each malloc.
+ * This method will find allocs by name in the code binary and insert calls
+ * before and after each alloc.
  * @param img is the code binary image.
  * @param v is the value for the function.
  */
-VOID find_malloc(IMG img, VOID *v) {
+VOID find_alloc(IMG img, VOID *v) {
 	if (IMG_IsMainExecutable(img)) {
 		img_name = basename(IMG_Name(img).c_str());
 	}
@@ -192,6 +239,28 @@ VOID find_malloc(IMG img, VOID *v) {
         RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)postmalloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
 
         RTN_Close(mallocRtn);
+    }
+
+    RTN callocRtn = RTN_FindByName(img, "calloc");
+    if (RTN_Valid(callocRtn))
+    {
+        RTN_Open(callocRtn);
+
+        RTN_InsertCall(callocRtn, IPOINT_BEFORE, (AFUNPTR)precalloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
+        RTN_InsertCall(callocRtn, IPOINT_AFTER, (AFUNPTR)postcalloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+
+        RTN_Close(callocRtn);
+    }
+
+    RTN reallocRtn = RTN_FindByName(img, "realloc");
+    if (RTN_Valid(reallocRtn))
+    {
+        RTN_Open(reallocRtn);
+
+        RTN_InsertCall(reallocRtn, IPOINT_BEFORE, (AFUNPTR)prerealloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
+        RTN_InsertCall(reallocRtn, IPOINT_AFTER, (AFUNPTR)postrealloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+
+        RTN_Close(reallocRtn);
     }
 }
 
@@ -216,7 +285,7 @@ VOID Fini(INT32 code, VOID* val) {
 
 	// Find the smallest heap address to locate static data region
 	UINT64 heap_smallest_addr = ULLONG_MAX;
-	for (auto it : mallocs[0]) {
+	for (auto it : allocs[0]) {
 		if (it.first <= heap_smallest_addr)
 			heap_smallest_addr = it.first;
 
@@ -243,8 +312,8 @@ VOID Fini(INT32 code, VOID* val) {
 			overview_file << ",Data";
 		} else {
 			// Iterate over all malloc structures from execution.
-			for (auto malloc : mallocs[0])
-				if (malloc.first <= it.first && it.first <= malloc.first+malloc.second) {
+			for (auto alloc : allocs[0])
+				if (alloc.first <= it.first && it.first <= alloc.first+alloc.second) {
 					if (norm_heap_addr[0].find(it.first) == norm_heap_addr[0].end())
 						norm_heap_addr[0][it.first] = ++norm_heap_counter;
 					overview_file << ",Heap";
@@ -297,8 +366,8 @@ VOID Fini(INT32 code, VOID* val) {
 			static_trace_file << time-(norm_static_time_init-1) << " " << norm_static_addr[0][addr];
 			static_trace_file << "\n";
 		} else {
-			for (auto malloc : mallocs[0])
-				if (malloc.first <= addr && addr <= malloc.first+malloc.second) {
+			for (auto alloc : allocs[0])
+				if (alloc.first <= addr && addr <= alloc.first+alloc.second) {
 					if (norm_heap_time_init == 0)
 						norm_heap_time_init = time;
 					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_heap_addr[0][addr];
@@ -327,7 +396,7 @@ int main (int argc, char **argv) {
 		stack.size = sl.rlim_cur >> page_size;
 
 	/* Instruction functions. */
-	IMG_AddInstrumentFunction(find_malloc, 0);
+	IMG_AddInstrumentFunction(find_alloc, 0);
 	/* Instruction functions. */
 	INS_AddInstrumentFunction(trace_memory, 0);
 	/* Thread Start */
