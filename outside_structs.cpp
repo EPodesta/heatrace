@@ -3,7 +3,6 @@
 static struct element static_v2[NUM_ELEM];
 
 void main2(void) {
-	// trocar por posix mem align.
 	struct element *heap_v2 = (struct element *) malloc (sizeof(struct element)*NUM_ELEM);
 	struct element stack_v2[NUM_ELEM];
 
