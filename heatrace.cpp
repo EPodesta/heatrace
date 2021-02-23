@@ -77,11 +77,12 @@ VOID premalloc(ADDRINT retip, UINT64 size) {
 VOID postmalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 
-	if (!(allocs[0].find(actual_work.addr) == allocs[0].end()))
+	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
 		if (allocs[0][actual_work.addr] <= actual_work.size)
 			allocs[0][actual_work.addr] = actual_work.size;
-	else
+	} else {
 		allocs[0][actual_work.addr] = actual_work.size;
+	}
 
 	cout << "MALLOC" << endl;
 	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
