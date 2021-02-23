@@ -76,7 +76,15 @@ VOID premalloc(ADDRINT retip, UINT64 size) {
  */
 VOID postmalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
-	allocs[0][actual_work.addr] = actual_work.size;
+
+	if (!(allocs[0].find(actual_work.addr) == allocs[0].end()))
+		if (allocs[0][actual_work.addr] <= actual_work.size)
+			allocs[0][actual_work.addr] = actual_work.size;
+	else
+		allocs[0][actual_work.addr] = actual_work.size;
+
+	cout << "MALLOC" << endl;
+	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
 
 /*
@@ -99,6 +107,8 @@ VOID precalloc(ADDRINT retip, UINT64 num_elements, UINT64 element_size) {
 VOID postcalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
+	cout << "CALLOC" << endl;
+	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
 /*
  * This method will be called before each realloc in the binary.
@@ -125,6 +135,8 @@ VOID prerealloc(ADDRINT retip, ADDRINT heap_ptr, UINT64 size) {
 VOID postrealloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
+	cout << "REALLOC" << endl;
+	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
 /*
  * This method will identify the memory op call location.
