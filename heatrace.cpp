@@ -139,6 +139,38 @@ VOID postrealloc(ADDRINT ret) {
 	cout << "REALLOC" << endl;
 	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
+
+/*
+ * This method will be called before each aligned_alloc in the binary.
+ * Also, it will save the aligned_alloc size value in pages.
+ * @param retip is the returned instruction pointer.
+ * @param size is the aligned_alloc size.
+ */
+VOID prememalign(ADDRINT retip, UINT64 size) {
+	actual_work.size = (size >> page_size);
+}
+
+/*
+ * This method will be called after each aligned_alloc in the binary
+ * Also, it will save the address of the pointer in the beginning of the
+ * allocated space.
+ * Finally, information about the aligned_alloc will be added to an array.
+ * @param ret is the first address of the allocated memory region.
+ */
+VOID postmemalign(ADDRINT ret) {
+	actual_work.addr = (ret >> page_size);
+
+	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
+		if (allocs[0][actual_work.addr] <= actual_work.size)
+			allocs[0][actual_work.addr] = actual_work.size;
+	} else {
+		allocs[0][actual_work.addr] = actual_work.size;
+	}
+
+	cout << "ALIGN_ALLOC" << endl;
+	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
+}
+
 /*
  * This method will identify the memory op call location.
  * @param tid is the thread identifier.
@@ -275,6 +307,19 @@ VOID find_alloc(IMG img, VOID *v) {
 
         RTN_Close(reallocRtn);
     }
+
+	// This rtn is only due to consistency purposes. More precisely, some
+	// comparisons were made and an alignment was needed.
+    RTN aligned_allocRtn = RTN_FindByName(img, "aligned_alloc");
+    if (RTN_Valid(aligned_allocRtn))
+    {
+        RTN_Open(aligned_allocRtn);
+
+        RTN_InsertCall(aligned_allocRtn, IPOINT_BEFORE, (AFUNPTR)prememalign, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
+        RTN_InsertCall(aligned_allocRtn, IPOINT_AFTER, (AFUNPTR)postmemalign, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+
+        RTN_Close(aligned_allocRtn);
+    }
 }
 
 /*
@@ -315,22 +360,24 @@ VOID Fini(INT32 code, VOID* val) {
 		// if the address is between the stack address and stack max
 		// Noteworthy, the stack grows in a high to low memory address manner.
 		if (stack.addr >= it.first && it.first >= stack.max) {
-			if (norm_stack_addr[0].find(it.first) == norm_stack_addr[0].end())
+			if (norm_stack_addr[0].find(it.first) == norm_stack_addr[0].end()) {
 				norm_stack_addr[0][it.first] = ++norm_stack_counter;
-			overview_file << ",Stack";
+				overview_file << ",Stack";
+			}
 		// if the address is smaller than the heap, then is static data
 		} else if (heap_smallest_addr > it.first) {
-			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end())
+			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end()) {
 				norm_static_addr[0][it.first] = ++norm_static_counter;
-			overview_file << ",Data";
+				overview_file << ",Data";
+			}
 		} else {
 			// Iterate over all malloc structures from execution.
 			for (auto alloc : allocs[0])
-				if (alloc.first <= it.first && it.first <= alloc.first+alloc.second) {
-					if (norm_heap_addr[0].find(it.first) == norm_heap_addr[0].end())
+				if (alloc.first <= it.first && it.first <= alloc.first+alloc.second)
+					if (norm_heap_addr[0].find(it.first) == norm_heap_addr[0].end()) {
 						norm_heap_addr[0][it.first] = ++norm_heap_counter;
-					overview_file << ",Heap";
-				}
+						overview_file << ",Heap";
+					}
 		}
 		// Write call locations on the output file.
 		overview_file << accessmap[0][it.first];
@@ -385,6 +432,7 @@ VOID Fini(INT32 code, VOID* val) {
 						norm_heap_time_init = time;
 					heap_trace_file << time-(norm_heap_time_init-1) << " " << norm_heap_addr[0][addr];
 					heap_trace_file << "\n";
+					break;
 				}
 		}
 	}
