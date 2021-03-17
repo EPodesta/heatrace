@@ -50,7 +50,7 @@ struct STACK {
 
 /*
  * Struct for heap info
- * Noteworthy, this structure is related to the most recent alloc.
+ * Noteworthy, this structure is related to the most recent allocation.
  */
 struct HEAP {
 	UINT64 addr;
@@ -65,6 +65,8 @@ struct HEAP {
  */
 VOID premalloc(ADDRINT retip, UINT64 size) {
 	actual_work.size = (size >> page_size);
+	if (actual_work.size > 0)
+		actual_work.size--;
 }
 
 /*
@@ -96,6 +98,8 @@ VOID postmalloc(ADDRINT ret) {
  */
 VOID precalloc(ADDRINT retip, UINT64 num_elements, UINT64 element_size) {
 	actual_work.size = ((num_elements*element_size) >> page_size);
+	if (actual_work.size > 0)
+		actual_work.size--;
 }
 
 /*
@@ -111,6 +115,7 @@ VOID postcalloc(ADDRINT ret) {
 	cout << "CALLOC" << endl;
 	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
+
 /*
  * This method will be called before each realloc in the binary.
  * Also, it will save the realloc size value in pages.
@@ -120,6 +125,8 @@ VOID postcalloc(ADDRINT ret) {
 VOID prerealloc(ADDRINT retip, ADDRINT heap_ptr, UINT64 size) {
 	ADDRINT heap_ptr_normalized = (heap_ptr >> page_size);
 	actual_work.size = (size >> page_size);
+	if (actual_work.size > 0)
+		actual_work.size--;
 
 	if (!(allocs[0].find(heap_ptr_normalized) == allocs[0].end()))
 		if (allocs[0][heap_ptr_normalized] >= (size >> page_size))
@@ -148,6 +155,8 @@ VOID postrealloc(ADDRINT ret) {
  */
 VOID prememalign(ADDRINT retip, UINT64 size) {
 	actual_work.size = (size >> page_size);
+	if (actual_work.size > 0)
+		actual_work.size--;
 }
 
 /*
@@ -188,6 +197,7 @@ VOID call_location(int tid, UINT64 addr, const CONTEXT *ctxt) {
 	else
 		accessmap[tid][addr] = "," + fname + ":" + decstr(line);
 }
+
 /*
  * This method will normalize each memory op address, link with a location in
  * the binary and structure an output file in the following format:
@@ -206,11 +216,7 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 	UINT64 page_limit = (addr_normalized+1)*page_size;
 	UINT64 page_limit_normalized = page_limit >> page_size;
 
-	// Escrever em binario para ser mais rápido. Usar o lzo para compactar e
-	// deixar mais rápido.
 	if (addr + size > page_limit && addr < page_limit) {
-		// UINT64 upper_threshold = (addr+size) - page_limit;
-		// UINT64 lower_threshold = size - upper_threshold;
 
 		if (pagemap[tid][addr_normalized]++ == 0)
 			call_location(tid, addr_normalized, ctxt);
@@ -376,7 +382,7 @@ VOID Fini(INT32 code, VOID* val) {
 				if (alloc.first <= it.first && it.first <= alloc.first+alloc.second)
 					if (norm_heap_addr[0].find(it.first) == norm_heap_addr[0].end()) {
 						norm_heap_addr[0][it.first] = ++norm_heap_counter;
-						overview_file << ",Heap";
+						overview_file << ",Heap" << "," << norm_heap_addr[0][it.first];
 					}
 		}
 		// Write call locations on the output file.
@@ -449,7 +455,8 @@ int main (int argc, char **argv) {
 
 	tmp_trace_file.open("tmp_trace_file.tmp");
 	struct rlimit sl;
-	// Stack size from main thread may be different from others.
+
+	/* Stack size from main thread may be different from others. */
 	int ret = getrlimit(RLIMIT_STACK, &sl);
 	if (ret == -1)
 		cerr << "Error getting stack size. errno: " << errno << endl;
