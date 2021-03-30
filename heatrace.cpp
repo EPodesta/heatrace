@@ -15,33 +15,51 @@
 
 using namespace std;
 
-// File to output memory accesses
+/*
+ * File to output memory accesses
+ */
 ofstream tmp_trace_file;
 
-// Binary name
+/*
+ * Binary name
+ */
 string img_name;
 
-// Map of page accesses <addr,count>
+/*
+ * Size of pages
+ */
+static int page_size;
+
+/*
+ * Discrete time counter
+ */
+static int time_counter = 0;
+
+/*
+ * Map of page accesses <addr,count>
+ */
 map<UINT64, UINT64> pagemap [THREADS];
 
-// Map of memory op locations <addr, location>
+/*
+ * Map of memory op locations <addr, location>
+ */
 map<UINT64, string> accessmap [THREADS];
 
-// Structure of code allocs <addr, size>
+/*
+ * Structure of code allocs <addr, size>
+ */
 map<UINT64, UINT64> allocs [THREADS];
 
-// Map of normalized addresses
+/*
+ * Map of normalized addresses <addr, norm_addr>
+ */
 map<UINT64, UINT64> norm_static_addr [THREADS];
 map<UINT64, UINT64> norm_heap_addr [THREADS];
 map<UINT64, UINT64> norm_stack_addr [THREADS];
 
-// Size of pages
-static int page_size;
-
-// Discrete time counter
-static int time_counter = 0;
-
-// Struct for stack info
+/*
+ * Struct for stack info
+ */
 struct STACK {
 	UINT64 size;
 	UINT64 max;
@@ -65,8 +83,6 @@ struct HEAP {
  */
 VOID premalloc(ADDRINT retip, UINT64 size) {
 	actual_work.size = (size >> page_size);
-	if (actual_work.size > 0)
-		actual_work.size--;
 }
 
 /*
@@ -98,8 +114,6 @@ VOID postmalloc(ADDRINT ret) {
  */
 VOID precalloc(ADDRINT retip, UINT64 num_elements, UINT64 element_size) {
 	actual_work.size = ((num_elements*element_size) >> page_size);
-	if (actual_work.size > 0)
-		actual_work.size--;
 }
 
 /*
@@ -112,6 +126,7 @@ VOID precalloc(ADDRINT retip, UINT64 num_elements, UINT64 element_size) {
 VOID postcalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
+
 	cout << "CALLOC" << endl;
 	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
@@ -125,8 +140,6 @@ VOID postcalloc(ADDRINT ret) {
 VOID prerealloc(ADDRINT retip, ADDRINT heap_ptr, UINT64 size) {
 	ADDRINT heap_ptr_normalized = (heap_ptr >> page_size);
 	actual_work.size = (size >> page_size);
-	if (actual_work.size > 0)
-		actual_work.size--;
 
 	if (!(allocs[0].find(heap_ptr_normalized) == allocs[0].end()))
 		if (allocs[0][heap_ptr_normalized] >= (size >> page_size))
@@ -143,6 +156,7 @@ VOID prerealloc(ADDRINT retip, ADDRINT heap_ptr, UINT64 size) {
 VOID postrealloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
+
 	cout << "REALLOC" << endl;
 	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
 }
@@ -155,8 +169,6 @@ VOID postrealloc(ADDRINT ret) {
  */
 VOID prememalign(ADDRINT retip, UINT64 size) {
 	actual_work.size = (size >> page_size);
-	if (actual_work.size > 0)
-		actual_work.size--;
 }
 
 /*
@@ -257,13 +269,13 @@ VOID trace_memory(INS ins, VOID *val) {
 
 /*
  * This method will get the stack address and max size. It will be executed at
- * thread init.
+ * thread init. NOTE: the application may change stack size dynamically. If this
+ * occurs, we need a more specific thread function.
  * @param tid is the thread identifier.
  * @param ctxt is the thread initial register state.
  * @param flags specific flags for the thread.
  * @param v values for the tool callback.
  */
-// Aplicação pode mudar de forma dinamica a minha stack.
 VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) >> page_size;
 	stack.max = stack.addr - stack.size;
@@ -280,7 +292,6 @@ VOID find_alloc(IMG img, VOID *v) {
 		img_name = basename(IMG_Name(img).c_str());
 	}
 
-	// All allocs call the same function.
     RTN mallocRtn = RTN_FindByName(img, "malloc");
     if (RTN_Valid(mallocRtn))
     {
@@ -314,8 +325,10 @@ VOID find_alloc(IMG img, VOID *v) {
         RTN_Close(reallocRtn);
     }
 
-	// This rtn is only due to consistency purposes. More precisely, some
-	// comparisons were made and an alignment was needed.
+	/*
+	 * This rtn is only due to consistency purposes. More precisely, some
+	 * comparisons were made and an alignment was needed.
+	 */
     RTN aligned_allocRtn = RTN_FindByName(img, "aligned_alloc");
     if (RTN_Valid(aligned_allocRtn))
     {
@@ -338,16 +351,22 @@ VOID find_alloc(IMG img, VOID *v) {
 VOID Fini(INT32 code, VOID* val) {
 	tmp_trace_file.close();
 
-	// Overall information file
+	/*
+	 * Overall information file
+	 */
 	ofstream overview_file;
 	overview_file.open((img_name + ".overall.info.csv").c_str());
 
-	// Discrete normalized time counter
+	/*
+	 * Discrete normalized time counter
+	 */
 	UINT64 norm_static_counter = 0;
 	UINT64 norm_heap_counter = 0;
 	UINT64 norm_stack_counter = 0;
 
-	// Find the smallest heap address to locate static data region
+	/*
+	 * Find the smallest heap address to locate static data region
+	 */
 	UINT64 heap_smallest_addr = ULLONG_MAX;
 	for (auto it : allocs[0]) {
 		if (it.first <= heap_smallest_addr)
@@ -357,27 +376,35 @@ VOID Fini(INT32 code, VOID* val) {
 	}
 	cout << "Stack: " << stack.addr << " " << stack.size << " " << stack.max << endl;
 
-	// Locate memory regions based on stack and heap information. Also, it
-	// normalizes discrete time.
+	/*
+	 * Locate memory regions based on stack and heap information. Also, it
+	 * normalizes discrete time.
+	 */
 	for (auto it : pagemap[0]) {
 		overview_file << it.first;
 		overview_file << ",";
 		overview_file << pagemap[0][it.first];
-		// if the address is between the stack address and stack max
-		// Noteworthy, the stack grows in a high to low memory address manner.
+		/*
+		 * If the address is between the stack address and stack max
+		 * Noteworthy, the stack grows in a high to low memory address manner.
+		 */
 		if (stack.addr >= it.first && it.first >= stack.max) {
 			if (norm_stack_addr[0].find(it.first) == norm_stack_addr[0].end()) {
 				norm_stack_addr[0][it.first] = ++norm_stack_counter;
 				overview_file << ",Stack";
 			}
-		// if the address is smaller than the heap, then is static data
+		/*
+		 * If the address is smaller than the heap, then is static data
+		 */
 		} else if (heap_smallest_addr > it.first) {
 			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end()) {
 				norm_static_addr[0][it.first] = ++norm_static_counter;
 				overview_file << ",Data";
 			}
 		} else {
-			// Iterate over all malloc structures from execution.
+			/*
+			 * Iterate over all malloc structures from execution.
+			 */
 			for (auto alloc : allocs[0])
 				if (alloc.first <= it.first && it.first <= alloc.first+alloc.second)
 					if (norm_heap_addr[0].find(it.first) == norm_heap_addr[0].end()) {
@@ -385,7 +412,9 @@ VOID Fini(INT32 code, VOID* val) {
 						overview_file << ",Heap" << "," << norm_heap_addr[0][it.first];
 					}
 		}
-		// Write call locations on the output file.
+		/*
+		 * Write call locations on the output file.
+		 */
 		overview_file << accessmap[0][it.first];
 		overview_file << "\n";
 	}
@@ -396,7 +425,9 @@ VOID Fini(INT32 code, VOID* val) {
 	ofstream heap_trace_file;
 	ofstream stack_trace_file;
 
-	// Time variables to normalize overall time based on memory regions.
+	/*
+	 * Time variables to normalize overall time based on memory regions.
+	 */
 	UINT64 norm_static_time_init = 0;
 	UINT64 norm_heap_time_init = 0;
 	UINT64 norm_stack_time_init = 0;
@@ -406,7 +437,9 @@ VOID Fini(INT32 code, VOID* val) {
 	heap_trace_file.open((img_name + ".heap.trace.csv").c_str());
 	stack_trace_file.open((img_name + ".stack.trace.csv").c_str());
 
-	// This code expects a format like: "time count"
+	/*
+	 * This code expects a format like: "time count"
+	 */
 	while (getline(read_tmp_trace_file, str)) {
 		UINT64 addr;
 		UINT64 time;
@@ -414,13 +447,17 @@ VOID Fini(INT32 code, VOID* val) {
 
 		size_t pos = str.find(delimiter);
 
-		// Get time and address info from file.
+		/*
+		 * Get time and address info from file.
+		 */
 		time = strtoul((str.substr(0, pos)).c_str(), NULL, 0);
 		str.erase(0, pos + delimiter.length());
 		addr = strtoul(str.c_str(), NULL, 0);
 
-		// Locate each region and use the initial time to normalize the time
-		// from each region.
+		/*
+		 * Locate each region and use the initial time to normalize the time
+		 * from each region.
+		 */
 		if (stack.addr >= addr && addr >= stack.max) {
 			if (norm_stack_time_init == 0)
 				norm_stack_time_init = time;
