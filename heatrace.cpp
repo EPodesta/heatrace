@@ -76,6 +76,15 @@ struct HEAP {
 } actual_work;
 
 /*
+ * Struct for static data info
+ */
+// struct STATIC {
+// 	UINT64 size;
+// 	UINT64 max;
+// 	UINT64 addr;
+// } static_data;
+
+/*
  * This method will be called before each malloc in the binary.
  * Also, it will save the malloc size value in pages.
  * @param retip is the returned instruction pointer.
@@ -102,8 +111,7 @@ VOID postmalloc(ADDRINT ret) {
 		allocs[0][actual_work.addr] = actual_work.size;
 	}
 
-	cout << "MALLOC" << endl;
-	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: malloc" << endl;
 }
 
 /*
@@ -127,8 +135,7 @@ VOID postcalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
 
-	cout << "CALLOC" << endl;
-	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: calloc" << endl;
 }
 
 /*
@@ -157,8 +164,7 @@ VOID postrealloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
 
-	cout << "REALLOC" << endl;
-	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: realloc" << endl;
 }
 
 /*
@@ -188,8 +194,7 @@ VOID postmemalign(ADDRINT ret) {
 		allocs[0][actual_work.addr] = actual_work.size;
 	}
 
-	cout << "ALIGN_ALLOC" << endl;
-	cout << actual_work.addr << " " << allocs[0][actual_work.addr] << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: align_alloc" << endl;
 }
 
 /*
@@ -246,6 +251,15 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
 	}
 }
+// position independent code
+// position independent executable
+// no rellocatable code
+// no gcc
+// aleatorizaçao dos endereços
+// no loader ou so inteiro
+// (desabilitar)
+// kernel.yama.ptrace_scope.
+// log dos mallocs (variavel de ambiente) do código mesmo.
 
 /*
  * This method will identify all memory operands from a instruction and iterate
@@ -265,6 +279,28 @@ VOID trace_memory(INS ins, VOID *val) {
 			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)do_memory_methodology, IARG_INST_PTR, IARG_CONST_CONTEXT, IARG_MEMORYOP_EA, memOp, IARG_MEMORYWRITE_SIZE, IARG_THREAD_ID, IARG_END);
         }
     }
+}
+
+VOID static_data_region(const char *file) {
+
+	//objdump -h dummy | grep -E ".rodata | .data | .bss" | awk '{print strtonum("0x" $4) " " strtonum("0x" $3) " " $2}'
+	char cmd[1024];
+	sprintf(cmd, "objdump -h %s | grep -E \".bss\" | awk '{print strtonum(\"0x\" $4) \" \" strtonum(\"0x\" $3) \" \" $2}'", file);
+	FILE *p = popen(cmd, "r");
+	cout << "## " << file << " memory addresses:" << endl;
+
+	char *line = NULL;
+	size_t linecap = 0;
+	ssize_t linelen;
+
+	UINT64 addr, size;
+	char name[1024];
+
+	while ((linelen = getline(&line, &linecap, p)) > 0) {
+		fscanf(p, "%lu %lu %s", &addr, &size, name);
+		cout << "Addr: " << addr << " Size: " << size << " Name: " << name << endl;
+	}
+	pclose(p);
 }
 
 /*
@@ -290,6 +326,7 @@ VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 VOID find_alloc(IMG img, VOID *v) {
 	if (IMG_IsMainExecutable(img)) {
 		img_name = basename(IMG_Name(img).c_str());
+		static_data_region(img_name.c_str());
 	}
 
     RTN mallocRtn = RTN_FindByName(img, "malloc");
@@ -491,6 +528,7 @@ int main (int argc, char **argv) {
 	page_size = 12;
 
 	tmp_trace_file.open("tmp_trace_file.tmp");
+
 	struct rlimit sl;
 
 	/* Stack size from main thread may be different from others. */
