@@ -78,11 +78,15 @@ struct HEAP {
 /*
  * Struct for static data info
  */
-// struct STATIC {
-// 	UINT64 size;
-// 	UINT64 max;
-// 	UINT64 addr;
-// } static_data;
+struct STATIC_DATA {
+	UINT64 size;
+	UINT64 max;
+	UINT64 addr;
+};
+
+struct STATIC_DATA rodata;
+struct STATIC_DATA data;
+struct STATIC_DATA bss;
 
 /*
  * This method will be called before each malloc in the binary.
@@ -111,7 +115,8 @@ VOID postmalloc(ADDRINT ret) {
 		allocs[0][actual_work.addr] = actual_work.size;
 	}
 
-	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: malloc" << endl;
+	cout << "# Malloc" << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
 }
 
 /*
@@ -135,7 +140,8 @@ VOID postcalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
 
-	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: calloc" << endl;
+	cout << "# Calloc" << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
 }
 
 /*
@@ -164,7 +170,8 @@ VOID postrealloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
 
-	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: realloc" << endl;
+	cout << "# Realloc" << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
 }
 
 /*
@@ -194,7 +201,8 @@ VOID postmemalign(ADDRINT ret) {
 		allocs[0][actual_work.addr] = actual_work.size;
 	}
 
-	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << " Name: align_alloc" << endl;
+	cout << "# Memory Align" << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
 }
 
 /*
@@ -283,22 +291,33 @@ VOID trace_memory(INS ins, VOID *val) {
 
 VOID static_data_region(const char *file) {
 
-	//objdump -h dummy | grep -E ".rodata | .data | .bss" | awk '{print strtonum("0x" $4) " " strtonum("0x" $3) " " $2}'
 	char cmd[1024];
-	sprintf(cmd, "objdump -h %s | grep -E \".bss\" | awk '{print strtonum(\"0x\" $4) \" \" strtonum(\"0x\" $3) \" \" $2}'", file);
+	sprintf(cmd, "objdump -h %s | grep -E \"\\.data|\\.rodata|\\.bss\" | awk '{print $2 \" \" strtonum(\"0x\" $4) \" \" strtonum(\"0x\" $3)}'", file);
+
 	FILE *p = popen(cmd, "r");
 	cout << "## " << file << " memory addresses:" << endl;
 
-	char *line = NULL;
-	size_t linecap = 0;
-	ssize_t linelen;
+	char line[1024];
+	char *static_data;
+	UINT64 static_data_addr;
+	UINT64 static_data_size;
 
-	UINT64 addr, size;
-	char name[1024];
-
-	while ((linelen = getline(&line, &linecap, p)) > 0) {
-		fscanf(p, "%lu %lu %s", &addr, &size, name);
-		cout << "Addr: " << addr << " Size: " << size << " Name: " << name << endl;
+	cout << "# Static Data" << endl;
+	while (fgets(line, sizeof(line), p) != NULL) {
+		static_data = strtok(line, " ");
+		static_data_addr = atoi(strtok(NULL, " ")) >> page_size;
+		static_data_size = atoi(strtok(NULL, "\n")) >> page_size;
+		if (strcmp(static_data, ".rodata") == 0) {
+			rodata.addr = static_data_addr;
+			rodata.size = static_data_size;
+		} else if (strcmp(static_data, ".data") == 0) {
+			data.addr = static_data_addr;
+			data.size = static_data_size;
+		} else if (strcmp(static_data, ".bss") == 0) {
+			bss.addr = static_data_addr;
+			bss.size = static_data_size;
+		}
+		cout << "Addr: " << static_data_addr << " Size: " << static_data_size << " Name: " << static_data << endl;
 	}
 	pclose(p);
 }
@@ -401,17 +420,8 @@ VOID Fini(INT32 code, VOID* val) {
 	UINT64 norm_heap_counter = 0;
 	UINT64 norm_stack_counter = 0;
 
-	/*
-	 * Find the smallest heap address to locate static data region
-	 */
-	UINT64 heap_smallest_addr = ULLONG_MAX;
-	for (auto it : allocs[0]) {
-		if (it.first <= heap_smallest_addr)
-			heap_smallest_addr = it.first;
-
-		cout << "Alloc (Heap): " << it.first << " " << it.second << " " << it.first+it.second << endl;
-	}
-	cout << "Stack: " << stack.addr << " " << stack.size << " " << stack.max << endl;
+	cout << "# Stack" << endl;
+	cout << "Addr: " << stack.addr << " Size: " << stack.size << " Limit: " << stack.max << endl;
 
 	/*
 	 * Locate memory regions based on stack and heap information. Also, it
@@ -431,9 +441,11 @@ VOID Fini(INT32 code, VOID* val) {
 				overview_file << ",Stack";
 			}
 		/*
-		 * If the address is smaller than the heap, then is static data
+		 * If the address is in any of the static data structures.
 		 */
-		} else if (heap_smallest_addr > it.first) {
+		} else if ((bss.addr <= it.first && it.first <= bss.addr+bss.size)
+				   || (data.addr <= it.first && it.first <= data.addr+bss.size)
+				   || (rodata.addr <= it.first && it.first <= rodata.addr+bss.size)) {
 			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end()) {
 				norm_static_addr[0][it.first] = ++norm_static_counter;
 				overview_file << ",Data";
@@ -500,7 +512,9 @@ VOID Fini(INT32 code, VOID* val) {
 				norm_stack_time_init = time;
 			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_stack_addr[0][addr];
 			stack_trace_file << "\n";
-		} else if (heap_smallest_addr > addr) {
+		} else if ((bss.addr <= addr && addr <= bss.addr+bss.size)
+				   || (data.addr <= addr && addr <= data.addr+bss.size)
+				   || (rodata.addr <= addr && addr <= rodata.addr+bss.size)) {
 			if (norm_static_time_init == 0)
 				norm_static_time_init = time;
 			static_trace_file << time-(norm_static_time_init-1) << " " << norm_static_addr[0][addr];
@@ -540,6 +554,7 @@ int main (int argc, char **argv) {
 
 	/* Instruction functions. */
 	IMG_AddInstrumentFunction(find_alloc, 0);
+
 	/* Instruction functions. */
 	INS_AddInstrumentFunction(trace_memory, 0);
 	/* Thread Start */
