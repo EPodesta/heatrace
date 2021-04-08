@@ -84,6 +84,9 @@ struct STATIC_DATA {
 	UINT64 addr;
 };
 
+/*
+ * All regions considered by our methodology.
+ */
 struct STATIC_DATA rodata;
 struct STATIC_DATA data;
 struct STATIC_DATA bss;
@@ -259,15 +262,6 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
 		tmp_trace_file << ++time_counter << " " << addr_normalized << "\n";
 	}
 }
-// position independent code
-// position independent executable
-// no rellocatable code
-// no gcc
-// aleatorizaçao dos endereços
-// no loader ou so inteiro
-// (desabilitar)
-// kernel.yama.ptrace_scope.
-// log dos mallocs (variavel de ambiente) do código mesmo.
 
 /*
  * This method will identify all memory operands from a instruction and iterate
@@ -289,6 +283,13 @@ VOID trace_memory(INS ins, VOID *val) {
     }
 }
 
+/*
+ * This method will identify the static data region.
+ * Initially, our methodology selects .rodata, .data and .bss. For more regions,
+ * it is possible to add them in the grep call or use a more sophisticated
+ * argument method.
+ * @param file is the executable file name.
+ */
 VOID static_data_region(const char *file) {
 
 	char cmd[1024];
@@ -539,6 +540,8 @@ VOID Fini(INT32 code, VOID* val) {
 int main (int argc, char **argv) {
 	PIN_InitSymbols();
 	if (PIN_Init(argc,argv)) return 1;
+
+	/* System page size. */
 	page_size = 12;
 
 	tmp_trace_file.open("tmp_trace_file.tmp");
@@ -554,7 +557,6 @@ int main (int argc, char **argv) {
 
 	/* Instruction functions. */
 	IMG_AddInstrumentFunction(find_alloc, 0);
-
 	/* Instruction functions. */
 	INS_AddInstrumentFunction(trace_memory, 0);
 	/* Thread Start */
