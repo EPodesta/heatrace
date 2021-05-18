@@ -439,7 +439,7 @@ VOID Fini(INT32 code, VOID* val) {
 		if (stack.addr >= it.first && it.first >= stack.max) {
 			if (norm_stack_addr[0].find(it.first) == norm_stack_addr[0].end()) {
 				norm_stack_addr[0][it.first] = ++norm_stack_counter;
-				overview_file << ",Stack";
+				overview_file << ",Stack" << "," << norm_stack_addr[0][it.first];
 			}
 		/*
 		 * If the address is in any of the static data structures.
@@ -449,7 +449,7 @@ VOID Fini(INT32 code, VOID* val) {
 				   || (rodata.addr <= it.first && it.first <= rodata.addr+bss.size)) {
 			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end()) {
 				norm_static_addr[0][it.first] = ++norm_static_counter;
-				overview_file << ",Data";
+				overview_file << ",Data" << "," << norm_static_addr[0][it.first];
 			}
 		} else {
 			/*
