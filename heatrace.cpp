@@ -367,7 +367,7 @@ VOID find_alloc(IMG img, VOID *v) {
     RTN reallocRtn = RTN_FindByName(img, "realloc");
     if (RTN_Valid(reallocRtn))
     {
-		RTN_ReplaceSignature(callocRtn, (AFUNPTR)pin_realloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
+		RTN_ReplaceSignature(reallocRtn, (AFUNPTR)pin_realloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
     }
 
 	/*
