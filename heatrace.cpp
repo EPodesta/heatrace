@@ -97,20 +97,14 @@ struct STATIC_DATA bss;
  * @param retip is the returned instruction pointer.
  * @param size is the malloc size.
  */
-VOID premalloc(ADDRINT retip, UINT64 size) {
+VOID* pin_malloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
+	ADDRINT ret;
 	actual_work.size = (size >> page_size);
-}
+	//call malloc here.
+	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(int), size, PIN_PARG_END());
+	cout << "V: " << actual_work.size << endl;
 
-/*
- * This method will be called after each malloc in the binary
- * Also, it will save the address of the pointer in the beginning of the
- * allocated space.
- * Finally, information about the malloc will be added to an array.
- * @param ret is the first address of the allocated memory region.
- */
-VOID postmalloc(ADDRINT ret) {
 	actual_work.addr = (ret >> page_size);
-
 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
 		if (allocs[0][actual_work.addr] <= actual_work.size)
 			allocs[0][actual_work.addr] = actual_work.size;
@@ -120,7 +114,35 @@ VOID postmalloc(ADDRINT ret) {
 
 	cout << "# Malloc" << endl;
 	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
+	return (void*)ret;
 }
+
+// VOID premalloc(ADDRINT retip, UINT64 size) {
+// 	actual_work.size = (size >> page_size);
+// 	cout << "V: " << actual_work.size << endl;
+// 	cout << "Ret: " << retip << endl;
+// }
+
+/*
+ * This method will be called after each malloc in the binary
+ * Also, it will save the address of the pointer in the beginning of the
+ * allocated space.
+ * Finally, information about the malloc will be added to an array.
+ * @param ret is the first address of the allocated memory region.
+ */
+// VOID postmalloc(ADDRINT ret) {
+// 	actual_work.addr = (ret >> page_size);
+//
+// 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
+// 		if (allocs[0][actual_work.addr] <= actual_work.size)
+// 			allocs[0][actual_work.addr] = actual_work.size;
+// 	} else {
+// 		allocs[0][actual_work.addr] = actual_work.size;
+// 	}
+//
+// 	cout << "# Malloc" << endl;
+// 	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
+// }
 
 /*
  * This method will be called before each calloc in the binary.
@@ -352,12 +374,16 @@ VOID find_alloc(IMG img, VOID *v) {
     RTN mallocRtn = RTN_FindByName(img, "malloc");
     if (RTN_Valid(mallocRtn))
     {
-        RTN_Open(mallocRtn);
+        // RTN_Open(mallocRtn);
 
-        RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR)premalloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-        RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)postmalloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+        // RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR)premalloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
+        // RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)postmalloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+		// PROTO proto_malloc = PROTO_Allocate(PIN_PARG(void*), CALLINGSTD_DEFAULT, "malloc", PIN_PARG(int), PIN_PARG_END());
+		// RTN_ReplaceSignature(mallocRtn, (AFUNPTR)pin_malloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_THREAD_ID, IARG_FUNCARG_ENTRYPOINT_VALUE, IARG_END);
+		RTN_ReplaceSignature(mallocRtn, (AFUNPTR)pin_malloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
 
-        RTN_Close(mallocRtn);
+        // RTN_Close(mallocRtn);
+		// PROTO_Free(proto_malloc);
     }
 
     RTN callocRtn = RTN_FindByName(img, "calloc");
