@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <iostream>
 #include <fstream>
 #include <sys/time.h>
@@ -5,6 +6,7 @@
 #include <string>
 #include <cerrno>
 #include <stdio.h>
+#include <types.h>
 #include <unordered_map>
 #include <libelf.h>
 #include <execinfo.h>
@@ -92,17 +94,20 @@ struct STATIC_DATA data;
 struct STATIC_DATA bss;
 
 /*
- * This method will be called before each malloc in the binary.
- * Also, it will save the malloc size value in pages.
- * @param retip is the returned instruction pointer.
- * @param size is the malloc size.
+ * This method will be called for each malloc in the binary.  It will work as a
+ * wrapper to the application malloc call. Also, It will save information about
+ * the malloc.
+ * @param ctx is the application context.
+ * @param orig_func_ptr is the pointer to the original malloc call (application
+ * call).
+ * @param size is the allocation size.
+ * @return a pointer to the first address of a newly allocated memory.
  */
 VOID* pin_malloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
 	ADDRINT ret;
 	actual_work.size = (size >> page_size);
-	//call malloc here.
-	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(int), size, PIN_PARG_END());
-	cout << "V: " << actual_work.size << endl;
+
+	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), size, PIN_PARG_END());
 
 	actual_work.addr = (ret >> page_size);
 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
@@ -117,108 +122,82 @@ VOID* pin_malloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
 	return (void*)ret;
 }
 
-// VOID premalloc(ADDRINT retip, UINT64 size) {
-// 	actual_work.size = (size >> page_size);
-// 	cout << "V: " << actual_work.size << endl;
-// 	cout << "Ret: " << retip << endl;
-// }
-
 /*
- * This method will be called after each malloc in the binary
- * Also, it will save the address of the pointer in the beginning of the
- * allocated space.
- * Finally, information about the malloc will be added to an array.
- * @param ret is the first address of the allocated memory region.
+ * This method will be called for each calloc in the binary.  It will work as a
+ * wrapper to the application calloc call. Also, It will save information about
+ * the calloc.
+ * @param ctx is the application context.
+ * @param orig_func_ptr is the pointer to the original calloc call (application
+ * call).
+ * @param num_elements is the number of elements to be allocated.
+ * @param element_size is the size of each element.
+ * @return a pointer to the first address of a newly allocated memory.
  */
-// VOID postmalloc(ADDRINT ret) {
-// 	actual_work.addr = (ret >> page_size);
-//
-// 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
-// 		if (allocs[0][actual_work.addr] <= actual_work.size)
-// 			allocs[0][actual_work.addr] = actual_work.size;
-// 	} else {
-// 		allocs[0][actual_work.addr] = actual_work.size;
-// 	}
-//
-// 	cout << "# Malloc" << endl;
-// 	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
-// }
-
-/*
- * This method will be called before each calloc in the binary.
- * Also, it will save the calloc size value in pages.
- * @param retip is the returned instruction pointer.
- * @param size is the calloc size.
- */
-VOID precalloc(ADDRINT retip, UINT64 num_elements, UINT64 element_size) {
+VOID* pin_calloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 num_elements, UINT64 element_size) {
+	ADDRINT ret;
 	actual_work.size = ((num_elements*element_size) >> page_size);
-}
 
-/*
- * This method will be called after each calloc in the binary
- * Also, it will save the address of the pointer in the beginning of the
- * allocated space.
- * Finally, information about the calloc will be added to an array.
- * @param ret is the first address of the allocated memory region.
- */
-VOID postcalloc(ADDRINT ret) {
+	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), num_elements, PIN_PARG(UINT64), element_size, PIN_PARG_END());
+
 	actual_work.addr = (ret >> page_size);
-	allocs[0][actual_work.addr] = actual_work.size;
+	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
+		if (allocs[0][actual_work.addr] <= actual_work.size)
+			allocs[0][actual_work.addr] = actual_work.size;
+	} else {
+		allocs[0][actual_work.addr] = actual_work.size;
+	}
 
 	cout << "# Calloc" << endl;
 	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
+	return (void*)ret;
 }
 
 /*
- * This method will be called before each realloc in the binary.
- * Also, it will save the realloc size value in pages.
- * @param retip is the returned instruction pointer.
- * @param size is the realloc size.
+ * This method will be called for each realloc in the binary.  It will work as a
+ * wrapper to the application realloc call. Also, It will save information about
+ * the realloc.
+ * @param ctx is the application context.
+ * @param orig_func_ptr is the pointer to the original realloc call (application
+ * call).
+ * @param heap_ptr is the pointer of the allocation to be realloced.
+ * @param size is the allocation size.
+ * @return a pointer to the first address of a newly allocated memory.
  */
-VOID prerealloc(ADDRINT retip, ADDRINT heap_ptr, UINT64 size) {
+VOID* pin_realloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, ADDRINT heap_ptr, UINT64 size) {
+	ADDRINT ret;
 	ADDRINT heap_ptr_normalized = (heap_ptr >> page_size);
 	actual_work.size = (size >> page_size);
 
 	if (!(allocs[0].find(heap_ptr_normalized) == allocs[0].end()))
 		if (allocs[0][heap_ptr_normalized] >= (size >> page_size))
 			actual_work.size = allocs[0][heap_ptr_normalized];
-}
 
-/*
- * This method will be called after each realloc in the binary
- * Also, it will save the address of the pointer in the beginning of the
- * allocated space.
- * Finally, information about the realloc will be added to an array.
- * @param ret is the first address of the allocated memory region.
- */
-VOID postrealloc(ADDRINT ret) {
+	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(ADDRINT), heap_ptr, PIN_PARG(UINT64), size, PIN_PARG_END());
+
 	actual_work.addr = (ret >> page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
 
 	cout << "# Realloc" << endl;
 	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
+	return (void*)ret;
 }
 
 /*
- * This method will be called before each aligned_alloc in the binary.
- * Also, it will save the aligned_alloc size value in pages.
- * @param retip is the returned instruction pointer.
+ * This method will be called for each mem_align in the binary.  It will work as a
+ * wrapper to the application mem_align call. Also, It will save information about
+ * the mem_align.
+ * @param ctx is the application context.
+ * @param orig_func_ptr is the pointer to the original mem_align call (application
+ * call).
  * @param size is the aligned_alloc size.
  */
-VOID prememalign(ADDRINT retip, UINT64 size) {
+VOID* pin_memalign(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
+	ADDRINT ret;
 	actual_work.size = (size >> page_size);
-}
 
-/*
- * This method will be called after each aligned_alloc in the binary
- * Also, it will save the address of the pointer in the beginning of the
- * allocated space.
- * Finally, information about the aligned_alloc will be added to an array.
- * @param ret is the first address of the allocated memory region.
- */
-VOID postmemalign(ADDRINT ret) {
+	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), size, PIN_PARG_END());
+
 	actual_work.addr = (ret >> page_size);
-
 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
 		if (allocs[0][actual_work.addr] <= actual_work.size)
 			allocs[0][actual_work.addr] = actual_work.size;
@@ -228,6 +207,7 @@ VOID postmemalign(ADDRINT ret) {
 
 	cout << "# Memory Align" << endl;
 	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
+	return (void*)ret;
 }
 
 /*
@@ -374,38 +354,20 @@ VOID find_alloc(IMG img, VOID *v) {
     RTN mallocRtn = RTN_FindByName(img, "malloc");
     if (RTN_Valid(mallocRtn))
     {
-        // RTN_Open(mallocRtn);
-
-        // RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR)premalloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-        // RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)postmalloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
-		// PROTO proto_malloc = PROTO_Allocate(PIN_PARG(void*), CALLINGSTD_DEFAULT, "malloc", PIN_PARG(int), PIN_PARG_END());
-		// RTN_ReplaceSignature(mallocRtn, (AFUNPTR)pin_malloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_THREAD_ID, IARG_FUNCARG_ENTRYPOINT_VALUE, IARG_END);
 		RTN_ReplaceSignature(mallocRtn, (AFUNPTR)pin_malloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-
-        // RTN_Close(mallocRtn);
-		// PROTO_Free(proto_malloc);
     }
 
     RTN callocRtn = RTN_FindByName(img, "calloc");
     if (RTN_Valid(callocRtn))
     {
-        RTN_Open(callocRtn);
+		RTN_ReplaceSignature(callocRtn, (AFUNPTR)pin_calloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
 
-        RTN_InsertCall(callocRtn, IPOINT_BEFORE, (AFUNPTR)precalloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
-        RTN_InsertCall(callocRtn, IPOINT_AFTER, (AFUNPTR)postcalloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
-
-        RTN_Close(callocRtn);
     }
 
     RTN reallocRtn = RTN_FindByName(img, "realloc");
     if (RTN_Valid(reallocRtn))
     {
-        RTN_Open(reallocRtn);
-
-        RTN_InsertCall(reallocRtn, IPOINT_BEFORE, (AFUNPTR)prerealloc, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
-        RTN_InsertCall(reallocRtn, IPOINT_AFTER, (AFUNPTR)postrealloc, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
-
-        RTN_Close(reallocRtn);
+		RTN_ReplaceSignature(callocRtn, (AFUNPTR)pin_realloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
     }
 
 	/*
@@ -415,12 +377,7 @@ VOID find_alloc(IMG img, VOID *v) {
     RTN aligned_allocRtn = RTN_FindByName(img, "aligned_alloc");
     if (RTN_Valid(aligned_allocRtn))
     {
-        RTN_Open(aligned_allocRtn);
-
-        RTN_InsertCall(aligned_allocRtn, IPOINT_BEFORE, (AFUNPTR)prememalign, IARG_RETURN_IP, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
-        RTN_InsertCall(aligned_allocRtn, IPOINT_AFTER, (AFUNPTR)postmemalign, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
-
-        RTN_Close(aligned_allocRtn);
+		RTN_ReplaceSignature(aligned_allocRtn, (AFUNPTR)pin_memalign, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
     }
 }
 
