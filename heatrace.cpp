@@ -178,7 +178,7 @@ VOID* pin_realloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, ADDRINT heap_ptr, UINT64
 	allocs[0][actual_work.addr] = actual_work.size;
 
 	cout << "# Realloc" << endl;
-	cout << "Addr: " << actual_work.addr << " Size: " << allocs[0][actual_work.addr] << endl;
+	cout << "Addr: " << actual_work.addr << " Size: " << (size >> page_size) << " Total in Heap: " << allocs[0][actual_work.addr] << endl;
 	return (void*)ret;
 }
 
