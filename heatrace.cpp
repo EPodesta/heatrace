@@ -274,15 +274,15 @@ VOID do_memory_methodology(ADDRINT ptr, const CONTEXT *ctxt, ADDRINT addr, ADDRI
  */
 VOID trace_memory(INS ins, VOID *val) {
 	UINT32 memOperands = INS_MemoryOperandCount(ins);
-    for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
-        if (INS_MemoryOperandIsRead(ins, memOp)) {
+	for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
+		if (INS_MemoryOperandIsRead(ins, memOp)) {
 			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)do_memory_methodology, IARG_INST_PTR, IARG_CONST_CONTEXT, IARG_MEMORYOP_EA, memOp, IARG_MEMORYREAD_SIZE, IARG_THREAD_ID, IARG_END);
-        }
+		}
 
-        if (INS_MemoryOperandIsWritten(ins, memOp)) {
+		if (INS_MemoryOperandIsWritten(ins, memOp)) {
 			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)do_memory_methodology, IARG_INST_PTR, IARG_CONST_CONTEXT, IARG_MEMORYOP_EA, memOp, IARG_MEMORYWRITE_SIZE, IARG_THREAD_ID, IARG_END);
-        }
-    }
+		}
+	}
 }
 
 /*
@@ -351,34 +351,34 @@ VOID find_alloc(IMG img, VOID *v) {
 		static_data_region(img_name.c_str());
 	}
 
-    RTN mallocRtn = RTN_FindByName(img, "malloc");
-    if (RTN_Valid(mallocRtn))
-    {
+	RTN mallocRtn = RTN_FindByName(img, "malloc");
+	if (RTN_Valid(mallocRtn))
+	{
 		RTN_ReplaceSignature(mallocRtn, (AFUNPTR)pin_malloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-    }
+	}
 
-    RTN callocRtn = RTN_FindByName(img, "calloc");
-    if (RTN_Valid(callocRtn))
-    {
+	RTN callocRtn = RTN_FindByName(img, "calloc");
+	if (RTN_Valid(callocRtn))
+	{
 		RTN_ReplaceSignature(callocRtn, (AFUNPTR)pin_calloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
 
-    }
+	}
 
-    RTN reallocRtn = RTN_FindByName(img, "realloc");
-    if (RTN_Valid(reallocRtn))
-    {
+	RTN reallocRtn = RTN_FindByName(img, "realloc");
+	if (RTN_Valid(reallocRtn))
+	{
 		RTN_ReplaceSignature(reallocRtn, (AFUNPTR)pin_realloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
-    }
+	}
 
 	/*
 	 * This rtn is only due to consistency purposes. More precisely, some
 	 * comparisons were made and an alignment was needed.
 	 */
-    RTN aligned_allocRtn = RTN_FindByName(img, "aligned_alloc");
-    if (RTN_Valid(aligned_allocRtn))
-    {
+	RTN aligned_allocRtn = RTN_FindByName(img, "aligned_alloc");
+	if (RTN_Valid(aligned_allocRtn))
+	{
 		RTN_ReplaceSignature(aligned_allocRtn, (AFUNPTR)pin_memalign, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
-    }
+	}
 }
 
 /*
@@ -424,12 +424,12 @@ VOID Fini(INT32 code, VOID* val) {
 				norm_stack_addr[0][it.first] = ++norm_stack_counter;
 				overview_file << ",Stack" << "," << norm_stack_addr[0][it.first];
 			}
-		/*
-		 * If the address is in any of the static data structures.
-		 */
+			/*
+			 * If the address is in any of the static data structures.
+			 */
 		} else if ((bss.addr <= it.first && it.first <= bss.addr+bss.size)
-				   || (data.addr <= it.first && it.first <= data.addr+bss.size)
-				   || (rodata.addr <= it.first && it.first <= rodata.addr+bss.size)) {
+				|| (data.addr <= it.first && it.first <= data.addr+bss.size)
+				|| (rodata.addr <= it.first && it.first <= rodata.addr+bss.size)) {
 			if (norm_static_addr[0].find(it.first) == norm_static_addr[0].end()) {
 				norm_static_addr[0][it.first] = ++norm_static_counter;
 				overview_file << ",Data" << "," << norm_static_addr[0][it.first];
@@ -497,8 +497,8 @@ VOID Fini(INT32 code, VOID* val) {
 			stack_trace_file << time-(norm_stack_time_init-1) << " " << norm_stack_addr[0][addr];
 			stack_trace_file << "\n";
 		} else if ((bss.addr <= addr && addr <= bss.addr+bss.size)
-				   || (data.addr <= addr && addr <= data.addr+bss.size)
-				   || (rodata.addr <= addr && addr <= rodata.addr+bss.size)) {
+				|| (data.addr <= addr && addr <= data.addr+bss.size)
+				|| (rodata.addr <= addr && addr <= rodata.addr+bss.size)) {
 			if (norm_static_time_init == 0)
 				norm_static_time_init = time;
 			static_trace_file << time-(norm_static_time_init-1) << " " << norm_static_addr[0][addr];
@@ -516,7 +516,7 @@ VOID Fini(INT32 code, VOID* val) {
 	}
 
 	static_trace_file.close();
-    heap_trace_file.close();
+	heap_trace_file.close();
 	stack_trace_file.close();
 }
 
