@@ -351,20 +351,20 @@ VOID find_alloc(IMG img, VOID *v) {
 		static_data_region(img_name.c_str());
 	}
 
-	RTN mallocRtn = RTN_FindByName(img, "__lib_malloc");
+	RTN mallocRtn = RTN_FindByName(img, "__libc_malloc");
 	if (RTN_Valid(mallocRtn))
 	{
 		RTN_ReplaceSignature(mallocRtn, (AFUNPTR)pin_malloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
 	}
 
-	RTN callocRtn = RTN_FindByName(img, "__lib_calloc");
+	RTN callocRtn = RTN_FindByName(img, "__libc_calloc");
 	if (RTN_Valid(callocRtn))
 	{
 		RTN_ReplaceSignature(callocRtn, (AFUNPTR)pin_calloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
 
 	}
 
-	RTN reallocRtn = RTN_FindByName(img, "__lib_realloc");
+	RTN reallocRtn = RTN_FindByName(img, "__libc_realloc");
 	if (RTN_Valid(reallocRtn))
 	{
 		RTN_ReplaceSignature(reallocRtn, (AFUNPTR)pin_realloc, IARG_CONST_CONTEXT, IARG_ORIG_FUNCPTR, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
