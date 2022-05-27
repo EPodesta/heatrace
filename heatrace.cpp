@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -304,14 +305,18 @@ VOID static_data_region(const char *file) {
 
 	char line[1024];
 	char *static_data;
+	UINT64 static_data_addr_value;
+	UINT64 static_data_size_value;
 	UINT64 static_data_addr;
 	UINT64 static_data_size;
 
 	cout << "# Static Data" << endl;
 	while (fgets(line, sizeof(line), p) != NULL) {
 		static_data = strtok(line, " ");
-		static_data_addr = atoi(strtok(NULL, " ")) / page_size + (atoi(strtok(NULL, " "))%page_size != 0);
-		static_data_size = atoi(strtok(NULL, "\n")) / page_size + (atoi(strtok(NULL, "\n"))%page_size != 0);
+		static_data_addr_value = atoi(strtok(NULL, " "));
+		static_data_size_value = atoi(strtok(NULL, "\n"));
+		static_data_addr = static_data_addr_value / page_size + (static_data_addr_value%page_size != 0);
+		static_data_size = static_data_size_value / page_size + (static_data_size_value%page_size != 0);
 		if (strcmp(static_data, ".rodata") == 0) {
 			rodata.addr = static_data_addr;
 			rodata.size = static_data_size;
