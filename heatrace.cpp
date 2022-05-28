@@ -112,7 +112,8 @@ VOID* pin_malloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), size, PIN_PARG_END());
 
-	actual_work.addr = (ret >> page_size);
+	actual_work.addr = (ret / page_size);
+	cout << "work addr " << actual_work.addr << " ret " << ret << endl;
 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
 		if (allocs[0][actual_work.addr] <= actual_work.size)
 			allocs[0][actual_work.addr] = actual_work.size;
@@ -142,7 +143,7 @@ VOID* pin_calloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 num_elements, UINT
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), num_elements, PIN_PARG(UINT64), element_size, PIN_PARG_END());
 
-	actual_work.addr = (ret >> page_size);
+	actual_work.addr = (ret / page_size);
 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
 		if (allocs[0][actual_work.addr] <= actual_work.size)
 			allocs[0][actual_work.addr] = actual_work.size;
@@ -177,7 +178,7 @@ VOID* pin_realloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, ADDRINT heap_ptr, UINT64
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(ADDRINT), heap_ptr, PIN_PARG(UINT64), size, PIN_PARG_END());
 
-	actual_work.addr = (ret >> page_size);
+	actual_work.addr = (ret / page_size);
 	allocs[0][actual_work.addr] = actual_work.size;
 
 	cout << "# Realloc" << endl;
@@ -200,7 +201,7 @@ VOID* pin_memalign(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), size, PIN_PARG_END());
 
-	actual_work.addr = (ret >> page_size);
+	actual_work.addr = (ret / page_size);
 	if (!(allocs[0].find(actual_work.addr) == allocs[0].end())) {
 		if (allocs[0][actual_work.addr] <= actual_work.size)
 			allocs[0][actual_work.addr] = actual_work.size;
@@ -342,7 +343,7 @@ VOID static_data_region(const char *file) {
  * @param v values for the tool callback.
  */
 VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
-	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) >> page_size;
+	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) / page_size;
 	stack.max = stack.addr - stack.size;
 }
 
