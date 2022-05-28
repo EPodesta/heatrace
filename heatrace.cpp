@@ -108,7 +108,7 @@ struct STATIC_DATA bss;
  */
 VOID* pin_malloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
 	ADDRINT ret;
-	actual_work.size = (size / page_size + (size%page_size != 0));
+	actual_work.size = (size / page_size + (size%page_size != 0)) + 1;
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), size, PIN_PARG_END());
 
@@ -139,7 +139,7 @@ VOID* pin_malloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
  */
 VOID* pin_calloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 num_elements, UINT64 element_size) {
 	ADDRINT ret;
-	actual_work.size = ((num_elements*element_size) / page_size + ((num_elements*element_size)%page_size != 0));
+	actual_work.size = ((num_elements*element_size) / page_size + ((num_elements*element_size)%page_size != 0)) + 1;
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), num_elements, PIN_PARG(UINT64), element_size, PIN_PARG_END());
 
@@ -169,8 +169,8 @@ VOID* pin_calloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 num_elements, UINT
  */
 VOID* pin_realloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, ADDRINT heap_ptr, UINT64 size) {
 	ADDRINT ret;
-	ADDRINT heap_ptr_normalized = (heap_ptr / page_size + (heap_ptr%page_size != 0));
-	actual_work.size = (size / page_size + (size%page_size != 0));
+	ADDRINT heap_ptr_normalized = heap_ptr / page_size;
+	actual_work.size = (size / page_size + (size%page_size != 0)) + 1;
 
 	if (!(allocs[0].find(heap_ptr_normalized) == allocs[0].end()))
 		if (allocs[0][heap_ptr_normalized] >= (size / page_size + (size%page_size != 0)))
@@ -197,7 +197,7 @@ VOID* pin_realloc(CONTEXT* ctxt, AFUNPTR orig_func_ptr, ADDRINT heap_ptr, UINT64
  */
 VOID* pin_memalign(CONTEXT* ctxt, AFUNPTR orig_func_ptr, UINT64 size) {
 	ADDRINT ret;
-	actual_work.size = (size / page_size + (size%page_size != 0));
+	actual_work.size = (size / page_size + (size%page_size != 0)) + 1;
 
 	PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, orig_func_ptr, NULL, PIN_PARG(void*), &ret, PIN_PARG(UINT64), size, PIN_PARG_END());
 
@@ -343,7 +343,7 @@ VOID static_data_region(const char *file) {
  * @param v values for the tool callback.
  */
 VOID thread(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
-	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) / page_size;
+	stack.addr = PIN_GetContextReg(ctxt, REG_STACK_PTR) / page_size; // + (PIN_GetContextReg(ctxt, REG_STACK_PTR)%page_size != 0);
 	stack.max = stack.addr - stack.size;
 }
 
@@ -544,7 +544,7 @@ int main (int argc, char **argv) {
 	if (ret == -1)
 		cerr << "Error getting stack size. errno: " << errno << endl;
 	else
-		stack.size = sl.rlim_cur / page_size + (sl.rlim_cur % page_size != 0);
+		stack.size = sl.rlim_cur / page_size;
 
 	/* Instruction functions. */
 	IMG_AddInstrumentFunction(find_alloc, 0);
